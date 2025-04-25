@@ -23,6 +23,13 @@ def load_validation_rules():
 # Function to apply user-friendly validation rules
 def apply_validation(df, column, rule, param=None):
     errors = []
+    
+    # Ensure column exists in the dataframe
+    if column not in df.columns:
+        st.error(f"Column '{column}' does not exist in the uploaded data.")
+        return errors
+
+    # Apply validation based on rule
     if rule == "contains_keyword_in_row":
         keyword = param
         for idx, value in df[column].iteritems():
@@ -76,9 +83,13 @@ if uploaded_file:
                 # Apply validation rule
                 all_errors = []
                 for column in selected_columns:
-                    errors = apply_validation(df, column, selected_rule, param)
-                    if errors:
-                        all_errors.extend(errors)
+                    # Check if the column exists before applying validation
+                    if column in df.columns:
+                        errors = apply_validation(df, column, selected_rule, param)
+                        if errors:
+                            all_errors.extend(errors)
+                    else:
+                        st.error(f"Column '{column}' does not exist in the uploaded data.")
 
                 # Show results
                 if all_errors:
