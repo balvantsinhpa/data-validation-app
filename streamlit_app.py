@@ -15,7 +15,7 @@ def load_file(uploaded_file):
     return df
 
 # Load validation rules template
-@st.cache
+@st.cache_data
 def load_validation_rules():
     rules_df = pd.read_excel("data_validation_rules_template_with_context.xlsx")  # Adjust path if needed
     return rules_df
@@ -87,7 +87,7 @@ if uploaded_file:
                     st.dataframe(error_df)
                     
                     # Provide option to download the report
-                    @st.cache
+                    @st.cache_data
                     def convert_df(df):
                         return df.to_csv(index=False).encode('utf-8')
 
