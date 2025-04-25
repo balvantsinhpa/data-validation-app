@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import io
 
 # Function to load the file
 def load_file(uploaded_file):
@@ -15,19 +14,29 @@ def load_file(uploaded_file):
         return None
     return df
 
-# Function to apply user-friendly validation rules (example: length check)
+# Load validation rules template
+@st.cache
+def load_validation_rules():
+    rules_df = pd.read_excel("data_validation_rules_template_with_context.xlsx")  # Adjust path if needed
+    return rules_df
+
+# Function to apply user-friendly validation rules
 def apply_validation(df, column, rule, param=None):
     errors = []
-    if rule == "Fixed Length":
+    if rule == "contains_keyword_in_row":
+        keyword = param
         for idx, value in df[column].iteritems():
-            if len(str(value)) != int(param):
-                errors.append((idx, f"Length of value '{value}' is not {param} characters"))
-    elif rule == "Allowed Values":
-        if param:
-            allowed_values = param.split(",")
-            for idx, value in df[column].iteritems():
-                if str(value) not in allowed_values:
-                    errors.append((idx, f"Value '{value}' is not in allowed values"))
+            if keyword not in str(value):
+                errors.append((idx, f"Keyword '{keyword}' not found in {column} at row {idx}"))
+    elif rule == "numeric_only":
+        for idx, value in df[column].iteritems():
+            if not str(value).isnumeric():
+                errors.append((idx, f"Value '{value}' is not numeric in {column} at row {idx}"))
+    elif rule == "fixed_length":
+        length = int(param)
+        for idx, value in df[column].iteritems():
+            if len(str(value)) != length:
+                errors.append((idx, f"Value '{value}' in {column} is not exactly {length} characters at row {idx}"))
     return errors
 
 # Streamlit UI
@@ -47,15 +56,21 @@ if uploaded_file:
         selected_columns = st.multiselect("Select Columns to Validate", columns)
         
         if selected_columns:
+            # Load validation rules
+            validation_rules = load_validation_rules()
+            rule_types = validation_rules['rule_type'].unique().tolist()
+
             # Select Rule to apply
-            rules = ["Fixed Length", "Allowed Values"]  # Add other rules as needed
-            selected_rule = st.selectbox("Select Rule to Apply", rules)
+            selected_rule = st.selectbox("Select Rule to Apply", rule_types)
             
-            # Provide parameters based on rule
-            if selected_rule == "Fixed Length":
+            # Provide parameters based on selected rule
+            param = None
+            if selected_rule == "contains_keyword_in_row":
+                param = st.text_input("Enter Keyword")
+            elif selected_rule == "fixed_length":
                 param = st.number_input("Enter Fixed Length", min_value=1, step=1)
-            elif selected_rule == "Allowed Values":
-                param = st.text_input("Enter Allowed Values (comma-separated)")
+            elif selected_rule == "numeric_only":
+                param = None  # No parameter needed for numeric_only
 
             if st.button("Run Validation"):
                 # Apply validation rule
@@ -85,4 +100,3 @@ if uploaded_file:
                     )
                 else:
                     st.success("No validation errors found!")
-
