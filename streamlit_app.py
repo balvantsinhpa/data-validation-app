@@ -1,94 +1,128 @@
 import streamlit as st
 import pandas as pd
-
-# Sample data_validation_rules_template_with_context.xlsx
-rules_df = pd.read_excel("data_validation_rules_template_with_context.xlsx")
+import numpy as np
 
 # Function to load the file
 def load_file(uploaded_file):
-    if uploaded_file is not None:
-        return pd.read_excel(uploaded_file)
+    file_type = uploaded_file.type
+    if file_type == "application/vnd.ms-excel" or file_type == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+        df = pd.read_excel(uploaded_file)
+    elif file_type == "text/csv":
+        df = pd.read_csv(uploaded_file)
+    else:
+        st.error("Invalid file type. Please upload an Excel or CSV file.")
+        return None
+    return df
 
-# Function to apply validation based on selected rule
-def apply_validation(df, columns, rule, param=None):
+# Load validation rules template
+@st.cache_data
+def load_validation_rules():
+    rules_df = pd.read_excel("data_validation_rules_template_with_context.xlsx")  # Adjust path if needed
+    return rules_df
+
+# Function to apply user-friendly validation rules
+def apply_validation(df, column, rule, param=None):
     errors = []
     
+    # Ensure column exists in the dataframe
+    if column not in df.columns:
+        st.error(f"Column '{column}' does not exist in the uploaded data. Available columns are: {', '.join(df.columns)}")
+        return errors
+    
+    # Handle NaN values
+    df[column] = df[column].fillna('')
+    
+    # Apply validation based on rule
     if rule == "contains_keyword_in_row":
-        # Expecting a 'keyword' parameter
         keyword = param
-        for column in columns:
-            if column in df.columns:
-                for idx, value in df[column].iteritems():
-                    if keyword not in str(value):
-                        errors.append(
-                            f"'{keyword}' is not present in cell {value} in column '{column}'. "
-                            f"Keyword '{keyword}' must exist in the column '{column}'."
-                        )
-    
+        def check_keyword(value):
+            if keyword not in str(value):
+                return f"Keyword '{keyword}' not found in value"
+            return None
+        errors = df[column].apply(check_keyword).dropna().tolist()
+        errors = [(idx, err) for idx, err in enumerate(errors) if err]
+
     elif rule == "numeric_only":
-        for column in columns:
-            if column in df.columns:
-                for idx, value in df[column].iteritems():
-                    if not str(value).isnumeric():
-                        errors.append(
-                            f"Value '{value}' in cell {idx} in column '{column}' is not numeric. "
-                            f"Column '{column}' must contain only numeric values."
-                        )
-    
+        def check_numeric(value):
+            if not str(value).isnumeric():
+                return f"Value '{value}' is not numeric"
+            return None
+        errors = df[column].apply(check_numeric).dropna().tolist()
+        errors = [(idx, err) for idx, err in enumerate(errors) if err]
+
     elif rule == "fixed_length":
-        # Expecting a 'length' parameter
         length = int(param)
-        for column in columns:
-            if column in df.columns:
-                for idx, value in df[column].iteritems():
-                    if len(str(value)) != length:
-                        errors.append(
-                            f"Value '{value}' in cell {idx} in column '{column}' is not exactly {length} characters. "
-                            f"Column '{column}' must be exactly {length} characters."
-                        )
-    
+        def check_length(value):
+            if len(str(value)) != length:
+                return f"Value '{value}' is not exactly {length} characters"
+            return None
+        errors = df[column].apply(check_length).dropna().tolist()
+        errors = [(idx, err) for idx, err in enumerate(errors) if err]
+
     return errors
 
-# Streamlit app
-def main():
-    st.title("Data Validation App")
+# Streamlit UI
+st.title('Data Validation Agent AI')
 
-    # File upload
-    uploaded_file = st.file_uploader("Upload Excel File", type=["xlsx", "xls"])
+# Upload File
+uploaded_file = st.file_uploader("Upload your file (CSV or Excel)", type=["csv", "xlsx"])
 
-    if uploaded_file is not None:
-        # Load data
-        df = load_file(uploaded_file)
+if uploaded_file:
+    df = load_file(uploaded_file)
+    if df is not None:
+        st.write("Data Preview:")
+        st.dataframe(df.head())  # Show preview of data
         
-        # Select columns to validate
-        columns = st.multiselect("Select Columns to Validate", options=df.columns)
-
-        # Select rule to apply
-        rule_options = rules_df['rule_value'].tolist()
-        selected_rule = st.selectbox("Select Rule to Apply", options=rule_options)
+        # Auto-detect columns
+        columns = df.columns.tolist()
+        selected_columns = st.multiselect("Select Columns to Validate", columns)
         
-        # Conditional input for parameters based on selected rule
-        if selected_rule == "contains_keyword_in_row":
-            keyword = st.text_input("Enter the keyword to check across selected columns:")
-        elif selected_rule == "fixed_length":
-            length = st.number_input("Enter the length for fixed-length check:", min_value=1, step=1)
+        if selected_columns:
+            # Load validation rules
+            validation_rules = load_validation_rules()
+            rule_types = validation_rules['rule_type'].unique().tolist()
 
-        # Validate and show errors
-        if st.button("Run Validation"):
-            if selected_rule == "contains_keyword_in_row" and not keyword:
-                st.error("Please enter a keyword for the 'contains_keyword_in_row' rule.")
-            elif selected_rule == "fixed_length" and not length:
-                st.error("Please enter a length for the 'fixed_length' rule.")
-            else:
-                errors = apply_validation(df, columns, selected_rule, keyword if selected_rule == "contains_keyword_in_row" else length)
-                
-                # Display errors if any
-                if errors:
-                    st.error("Validation Errors:")
-                    for error in errors:
-                        st.write(error)
+            # Select Rule to apply
+            selected_rule = st.selectbox("Select Rule to Apply", rule_types)
+            
+            # Provide parameters based on selected rule
+            param = None
+            if selected_rule == "contains_keyword_in_row":
+                param = st.text_input("Enter Keyword")
+            elif selected_rule == "fixed_length":
+                param = st.number_input("Enter Fixed Length", min_value=1, step=1)
+            elif selected_rule == "numeric_only":
+                param = None  # No parameter needed for numeric_only
+
+            if st.button("Run Validation"):
+                # Apply validation rule
+                all_errors = []
+                for column in selected_columns:
+                    # Check if the column exists before applying validation
+                    if column in df.columns:
+                        errors = apply_validation(df, column, selected_rule, param)
+                        if errors:
+                            all_errors.extend(errors)
+                    else:
+                        st.error(f"Column '{column}' does not exist in the uploaded data.")
+
+                # Show results
+                if all_errors:
+                    error_df = pd.DataFrame(all_errors, columns=["Row", "Error Message"])
+                    st.write("Validation Errors:")
+                    st.dataframe(error_df)
+                    
+                    # Provide option to download the report
+                    @st.cache_data
+                    def convert_df(df):
+                        return df.to_csv(index=False).encode('utf-8')
+
+                    csv = convert_df(error_df)
+                    st.download_button(
+                        label="Download Validation Errors (CSV)",
+                        data=csv,
+                        file_name="validation_errors.csv",
+                        mime="text/csv"
+                    )
                 else:
-                    st.success("No validation errors found.")
-        
-if __name__ == "__main__":
-    main()
+                    st.success("No validation errors found!")
