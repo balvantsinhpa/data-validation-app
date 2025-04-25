@@ -31,27 +31,34 @@ def apply_validation(df, column, rule, param=None):
     
     # Handle NaN values
     df[column] = df[column].fillna('')
-
-    # Check if df[column] is a valid Series
-    if not isinstance(df[column], pd.Series):
-        st.error(f"Error: '{column}' is not a valid column or Series.")
-        return errors
-
+    
     # Apply validation based on rule
     if rule == "contains_keyword_in_row":
         keyword = param
-        for idx, value in df[column].iteritems():
+        def check_keyword(value):
             if keyword not in str(value):
-                errors.append((idx, f"Keyword '{keyword}' not found in {column} at row {idx}"))
+                return f"Keyword '{keyword}' not found in value"
+            return None
+        errors = df[column].apply(check_keyword).dropna().tolist()
+        errors = [(idx, err) for idx, err in enumerate(errors) if err]
+
     elif rule == "numeric_only":
-        for idx, value in df[column].iteritems():
+        def check_numeric(value):
             if not str(value).isnumeric():
-                errors.append((idx, f"Value '{value}' is not numeric in {column} at row {idx}"))
+                return f"Value '{value}' is not numeric"
+            return None
+        errors = df[column].apply(check_numeric).dropna().tolist()
+        errors = [(idx, err) for idx, err in enumerate(errors) if err]
+
     elif rule == "fixed_length":
         length = int(param)
-        for idx, value in df[column].iteritems():
+        def check_length(value):
             if len(str(value)) != length:
-                errors.append((idx, f"Value '{value}' in {column} is not exactly {length} characters at row {idx}"))
+                return f"Value '{value}' is not exactly {length} characters"
+            return None
+        errors = df[column].apply(check_length).dropna().tolist()
+        errors = [(idx, err) for idx, err in enumerate(errors) if err]
+
     return errors
 
 # Streamlit UI
