@@ -37,7 +37,7 @@ def apply_validation(df, column, rule, param=None):
         keyword = param
         def check_keyword(value):
             if keyword not in str(value):
-                return f"Keyword '{keyword}' not found in value"
+                return f"Keyword '{keyword}' not found in cell {value}. Keyword '{keyword}' must exist in at least one of the columns {column}."
             return None
         errors = df[column].apply(check_keyword).dropna().tolist()
         errors = [(idx, err) for idx, err in enumerate(errors) if err]
@@ -45,7 +45,7 @@ def apply_validation(df, column, rule, param=None):
     elif rule == "numeric_only":
         def check_numeric(value):
             if not str(value).isnumeric():
-                return f"Value '{value}' is not numeric"
+                return f"Value '{value}' in cell {value} is not numeric. Column '{column}' must contain only numeric values."
             return None
         errors = df[column].apply(check_numeric).dropna().tolist()
         errors = [(idx, err) for idx, err in enumerate(errors) if err]
@@ -54,9 +54,18 @@ def apply_validation(df, column, rule, param=None):
         length = int(param)
         def check_length(value):
             if len(str(value)) != length:
-                return f"Value '{value}' is not exactly {length} characters"
+                return f"Value '{value}' in cell {value} is not exactly {length} characters. Column '{column}' must be exactly {length} characters."
             return None
         errors = df[column].apply(check_length).dropna().tolist()
+        errors = [(idx, err) for idx, err in enumerate(errors) if err]
+
+    elif rule == "allowed_values":
+        allowed_values = param.split(",")  # Comma-separated list of allowed values
+        def check_allowed(value):
+            if str(value) not in allowed_values:
+                return f"Value '{value}' in cell {value} is not one of the allowed values. Column '{column}' must contain only allowed values: {', '.join(allowed_values)}."
+            return None
+        errors = df[column].apply(check_allowed).dropna().tolist()
         errors = [(idx, err) for idx, err in enumerate(errors) if err]
 
     return errors
@@ -80,19 +89,21 @@ if uploaded_file:
         if selected_columns:
             # Load validation rules
             validation_rules = load_validation_rules()
-            rule_types = validation_rules['rule_type'].unique().tolist()
+            rule_values = validation_rules['rule_value'].unique().tolist()
 
             # Select Rule to apply
-            selected_rule = st.selectbox("Select Rule to Apply", rule_types)
+            selected_rule = st.selectbox("Select Rule to Apply", rule_values)
             
             # Provide parameters based on selected rule
             param = None
-            if selected_rule == "contains_keyword_in_row":
+            if selected_rule == "Contains keyword in any selected column":
                 param = st.text_input("Enter Keyword")
-            elif selected_rule == "fixed_length":
+            elif selected_rule == "Fixed number of characters":
                 param = st.number_input("Enter Fixed Length", min_value=1, step=1)
-            elif selected_rule == "numeric_only":
+            elif selected_rule == "Allow only numbers":
                 param = None  # No parameter needed for numeric_only
+            elif selected_rule == "Limit to specific values":
+                param = st.text_input("Enter Allowed Values (comma-separated)")
 
             if st.button("Run Validation"):
                 # Apply validation rule
