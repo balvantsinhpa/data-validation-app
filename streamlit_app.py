@@ -26,7 +26,7 @@ def apply_validation(df, column, rule, param=None):
     
     # Ensure column exists in the dataframe
     if column not in df.columns:
-        st.error(f"Column '{column}' does not exist in the uploaded data.")
+        st.error(f"Column '{column}' does not exist in the uploaded data. Available columns are: {', '.join(df.columns)}")
         return errors
 
     # Apply validation based on rule
