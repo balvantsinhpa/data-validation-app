@@ -28,6 +28,14 @@ def apply_validation(df, column, rule, param=None):
     if column not in df.columns:
         st.error(f"Column '{column}' does not exist in the uploaded data. Available columns are: {', '.join(df.columns)}")
         return errors
+    
+    # Handle NaN values
+    df[column] = df[column].fillna('')
+
+    # Check if df[column] is a valid Series
+    if not isinstance(df[column], pd.Series):
+        st.error(f"Error: '{column}' is not a valid column or Series.")
+        return errors
 
     # Apply validation based on rule
     if rule == "contains_keyword_in_row":
