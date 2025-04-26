@@ -170,10 +170,11 @@ if uploaded_file:
                                     col_idx = df.columns.get_loc(col_name)
                                     worksheet.write(row_idx + 1, col_idx, df.at[row_idx, col_name], format_red)
 
+
                             st.download_button(
-                                label="📥 Download Validated File (Excel)",
+                                label=f"Download {sheet_name} ({rule_label}) Validation",
                                 data=output.getvalue(),
-                                file_name=f"{sheet_name}_validated.xlsx",
+                                file_name=f"{sheet_name}_{rule_label.lower().replace(' ', '_')}_validated.xlsx",
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                             )
 
