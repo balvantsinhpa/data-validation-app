@@ -76,9 +76,9 @@ if uploaded_file:
 
             selected_rule = st.selectbox("Select Rule to Apply", rule_types)
 
-            # Try to fetch rule_label safely
-            rule_label_list = validation_rules.loc[validation_rules['rule_type'] == selected_rule, 'rule_label'].tolist()
-            rule_label = rule_label_list[0] if rule_label_list else selected_rule  # fallback to rule_type if missing
+            # Try to fetch rule_type safely
+            rule_type_list = validation_rules.loc[validation_rules['rule_type'] == selected_rule, 'rule_type'].tolist()
+            rule_type = rule_type_list[0] if rule_type_list else selected_rule  # fallback to rule_type if missing
 
             # Optional parameter input
             param = None
@@ -133,9 +133,9 @@ if uploaded_file:
                                             worksheet.write(row_idx + 1, col_idx, styled_df.at[row_idx, col], red_format)
                             
                             st.download_button(
-                                label=f"📥 Download {sheet_name} ({rule_label}) Validation",
+                                label=f"📥 Download {sheet_name} ({rule_type}) Validation",
                                 data=output.getvalue(),
-                                file_name=f"{sheet_name}_{rule_label.lower().replace(' ', '_')}_validated.xlsx",
+                                file_name=f"{sheet_name}_{rule_type.lower().replace(' ', '_')}_validated.xlsx",
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                             )
                         else:
