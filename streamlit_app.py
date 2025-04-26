@@ -63,6 +63,10 @@ def highlight_errors(df, error_list):
     ], axis=0)
     return styled_df
 
+# Function to humanize rule name
+def humanize_rule_name(rule_type):
+    return rule_type.replace('_', ' ').title()
+
 # Streamlit UI
 st.set_page_config(page_title="Data Validation Agent AI", page_icon="✅", layout="wide")
 st.title('🛡️ Data Validation Agent AI')
@@ -122,10 +126,8 @@ if uploaded_file:
 
                     output.seek(0)
 
-                    # Safe rule label
-                    rule_label_list = validation_rules.loc[validation_rules['rule_type'] == selected_rule, 'rule_label'].tolist()
-                    rule_label = rule_label_list[0] if rule_label_list else selected_rule
-
+                    # Human-friendly rule label
+                    rule_label = humanize_rule_name(selected_rule)
                     download_filename = f"{selected_sheet}_{rule_label}_validated.xlsx"
 
                     st.download_button(
