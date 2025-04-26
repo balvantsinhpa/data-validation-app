@@ -1,142 +1,181 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import time
 from io import BytesIO
 
-# Function to load the file
+# Set page configuration
+st.set_page_config(
+    page_title="Data Validation Agent",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# ------------------------------------
+# Caching Functions
+# ------------------------------------
+
+@st.cache_data(show_spinner="Loading validation rules...")
+def load_validation_rules():
+    return pd.read_excel("data_validation_rules_template_with_context.xlsx")
+
+@st.cache_data(show_spinner="Reading file...")
 def load_file(uploaded_file):
     file_type = uploaded_file.type
     if file_type in ["application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]:
-        dfs = pd.read_excel(uploaded_file, sheet_name=None)  # Load all sheets
+        return pd.read_excel(uploaded_file, sheet_name=None)  # Load all sheets
     elif file_type == "text/csv":
-        dfs = {"Sheet1": pd.read_csv(uploaded_file)}  # Wrap CSV into dict
+        return {"Sheet1": pd.read_csv(uploaded_file)}
     else:
-        st.error("Invalid file type. Please upload an Excel or CSV file.")
+        st.error("Unsupported file type. Please upload a CSV or Excel file.")
         return None
-    return dfs
 
-# Load validation rules template
-@st.cache_data
-def load_validation_rules():
-    return pd.read_excel("data_validation_rules_template_with_context.xlsx")  # Adjust path
+# ------------------------------------
+# Validation Logic
+# ------------------------------------
 
-# Function to apply user-friendly validation rules
 def apply_validation(df, column, rule, param=None):
     errors = []
 
     if column not in df.columns:
-        st.error(f"Column '{column}' does not exist in the uploaded data.")
         return errors
 
     df[column] = df[column].fillna('')
 
     if rule == "contains_keyword_in_row":
         keyword = param
-        def check_keyword(value):
-            if keyword not in str(value):
-                return f"Keyword '{keyword}' not found"
-            return None
-        errors = df[column].apply(check_keyword).dropna()
-
+        errors = [
+            (idx, f"Keyword '{keyword}' not found in value '{value}'")
+            for idx, value in df[column].items()
+            if keyword not in str(value)
+        ]
     elif rule == "numeric_only":
-        def check_numeric(value):
-            if not str(value).isnumeric():
-                return f"Value '{value}' is not numeric"
-            return None
-        errors = df[column].apply(check_numeric).dropna()
-
+        errors = [
+            (idx, f"Value '{value}' is not numeric")
+            for idx, value in df[column].items()
+            if not str(value).isnumeric()
+        ]
     elif rule == "fixed_length":
         length = int(param)
-        def check_length(value):
-            if len(str(value)) != length:
-                return f"Value '{value}' is not exactly {length} characters"
-            return None
-        errors = df[column].apply(check_length).dropna()
+        errors = [
+            (idx, f"Value '{value}' is not exactly {length} characters")
+            for idx, value in df[column].items()
+            if len(str(value)) != length
+        ]
 
     return errors
 
+def highlight_errors(df, error_indices):
+    df_styled = df.copy()
+    def highlight(val, row_idx, col_name):
+        if (row_idx, col_name) in error_indices:
+            return 'background-color: #FFCCCC'
+        return ''
+    
+    styled_df = df_styled.style.applymap_index(
+        lambda _: '', axis=0  # keep index unstyled
+    ).apply(
+        lambda col: [
+            highlight(val, idx, col.name) for idx, val in enumerate(col)
+        ],
+        axis=0
+    )
+    return styled_df
+
+# ------------------------------------
 # Streamlit UI
-st.set_page_config(page_title="Data Validation Agent AI", layout="wide")
-st.title('📄 Data Validation Agent AI')
+# ------------------------------------
+
+# Title
+st.title("📋 Data Validation Agent AI")
+st.caption("Validate your data intelligently with friendly error messages and easy downloads.")
 
 # Upload File
-uploaded_file = st.file_uploader("Upload your file (CSV or Excel)", type=["csv", "xlsx"])
+uploaded_file = st.file_uploader("📂 Upload your file (CSV or Excel)", type=["csv", "xlsx"])
 
 if uploaded_file:
-    dfs = load_file(uploaded_file)
-    if dfs is not None:
-        st.success(f"Loaded {len(dfs)} sheet(s). Please proceed.")
-        
-        sheet_names = list(dfs.keys())
+    sheets_dict = load_file(uploaded_file)
+
+    if sheets_dict:
+        sheet_names = list(sheets_dict.keys())
         selected_sheets = st.multiselect("Select Sheets to Validate", sheet_names)
 
         if selected_sheets:
             validation_rules = load_validation_rules()
             rule_types = validation_rules['rule_type'].unique().tolist()
 
-            selected_rule = st.selectbox("Select Rule to Apply", rule_types)
+            for sheet_name in selected_sheets:
+                st.subheader(f"Sheet: {sheet_name}")
+                df = sheets_dict[sheet_name]
 
-            # Try to fetch rule_type safely
-            rule_type_list = validation_rules.loc[validation_rules['rule_type'] == selected_rule, 'rule_type'].tolist()
-            rule_type = rule_type_list[0] if rule_type_list else selected_rule  # fallback to rule_type if missing
+                with st.expander("Preview Data", expanded=False):
+                    st.dataframe(df.head(20), use_container_width=True)
 
-            # Optional parameter input
-            param = None
-            if selected_rule == "contains_keyword_in_row":
-                param = st.text_input("Enter Keyword")
-            elif selected_rule == "fixed_length":
-                param = st.number_input("Enter Fixed Length", min_value=1, step=1)
+                columns = df.columns.tolist()
+                selected_columns = st.multiselect(f"Select Columns to Validate (Sheet: {sheet_name})", columns, key=f"columns_{sheet_name}")
 
-            if st.button("🚀 Run Validation"):
-                for sheet_name in selected_sheets:
-                    st.subheader(f"Validating sheet: {sheet_name}")
-                    df = dfs[sheet_name]
-                    columns = df.columns.tolist()
+                if selected_columns:
+                    selected_rule = st.selectbox(f"Select Rule to Apply (Sheet: {sheet_name})", rule_types, key=f"rule_{sheet_name}")
 
-                    selected_columns = st.multiselect(f"Select Columns in {sheet_name} to Validate", columns, key=sheet_name)
+                    param = None
+                    if selected_rule == "contains_keyword_in_row":
+                        param = st.text_input("Enter Keyword", key=f"param_keyword_{sheet_name}")
+                    elif selected_rule == "fixed_length":
+                        param = st.number_input("Enter Fixed Length", min_value=1, step=1, key=f"param_length_{sheet_name}")
 
-                    if selected_columns:
+                    if st.button(f"Run Validation on {sheet_name}", key=f"validate_{sheet_name}"):
+
+                        # Progress Bar Start
                         progress_bar = st.progress(0)
-                        n_rows = len(df)
-                        validation_results = pd.DataFrame(index=df.index)
+                        status_text = st.empty()
 
-                        for idx, col in enumerate(selected_columns):
-                            errors = apply_validation(df, col, selected_rule, param)
-                            if not errors.empty:
-                                validation_results[col] = errors
-                            progress_bar.progress((idx + 1) / len(selected_columns))
+                        all_errors = []
+                        error_indices = set()
+                        total_columns = len(selected_columns)
 
-                        # Combine validation results into final output
-                        if not validation_results.dropna(how='all').empty:
-                            styled_df = df.copy()
+                        for idx, column in enumerate(selected_columns):
+                            # Update progress
+                            progress_percent = int((idx / total_columns) * 100)
+                            progress_bar.progress(progress_percent)
+                            status_text.text(f"Validating column: {column}")
 
-                            # Highlight cells with issues
-                            def highlight_errors(val, col_name):
-                                if not pd.isna(validation_results.at[val.name, col_name]):
-                                    return 'background-color: red'
-                                return ''
+                            errors = apply_validation(df, column, selected_rule, param)
+                            all_errors.extend([(row, col, err) for row, err in errors for col in [column]])
+                            error_indices.update((row, column) for row, err in errors)
+
+                            # Simulate time for better UX (optional)
+                            time.sleep(0.2)  # You can remove or adjust this
+
+                        # Finish Progress Bar
+                        progress_bar.progress(100)
+                        status_text.text("Validation complete! 🎯")
+
+                        if all_errors:
+                            error_df = pd.DataFrame(all_errors, columns=["Row", "Column", "Error Message"])
+                            st.error(f"❌ {len(error_df)} validation issues found!")
+                            st.dataframe(error_df, use_container_width=True)
+
+                            styled_df = highlight_errors(df, error_indices)
                             
-                            styled = styled_df.style.apply(lambda col: [highlight_errors(val, col.name) for val in col], axis=0)
-
-                            # Downloadable validated file
+                            # Allow file download
                             output = BytesIO()
                             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                                styled_df.to_excel(writer, sheet_name=sheet_name, index=False)
+                                df.to_excel(writer, sheet_name='Validated', index=False)
                                 workbook = writer.book
-                                worksheet = writer.sheets[sheet_name]
+                                worksheet = writer.sheets['Validated']
 
-                                # Apply red fill where errors exist
-                                red_format = workbook.add_format({'bg_color': '#FFC7CE'})
-                                for col_idx, col in enumerate(styled_df.columns):
-                                    for row_idx in range(len(styled_df)):
-                                        if not pd.isna(validation_results.at[row_idx, col]):
-                                            worksheet.write(row_idx + 1, col_idx, styled_df.at[row_idx, col], red_format)
-                            
+                                # Apply red background formatting
+                                format_red = workbook.add_format({'bg_color': '#FFCCCC'})
+                                for row_idx, col_name in error_indices:
+                                    col_idx = df.columns.get_loc(col_name)
+                                    worksheet.write(row_idx + 1, col_idx, df.at[row_idx, col_name], format_red)
+
                             st.download_button(
-                                label=f"📥 Download {sheet_name} ({rule_type}) Validation",
+                                label="📥 Download Validated File (Excel)",
                                 data=output.getvalue(),
-                                file_name=f"{sheet_name}_{rule_type.lower().replace(' ', '_')}_validated.xlsx",
+                                file_name=f"{sheet_name}_validated.xlsx",
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                             )
+
                         else:
-                            st.success(f"No validation errors found in {sheet_name}!")
+                            st.success("✅ No validation errors found!")
