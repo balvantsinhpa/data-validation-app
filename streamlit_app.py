@@ -16,12 +16,10 @@ def load_file(uploaded_file):
         st.error("Invalid file type. Please upload an Excel or CSV file.")
         return None
 
-# Load validation rules template
 @st.cache_data
 def load_validation_rules():
     return pd.read_excel("data_validation_rules_template_with_context.xlsx")
 
-# Function to apply validation rules
 def apply_validation(df, selected_columns, rule_type, param=None):
     errors = []
     for column in selected_columns:
@@ -48,7 +46,6 @@ def apply_validation(df, selected_columns, rule_type, param=None):
 
     return errors
 
-# Function to highlight errors in dataframe
 def highlight_errors(df, error_list):
     df_copy = df.copy()
     error_indices = {(row, col) for row, col, _ in error_list}
@@ -63,7 +60,6 @@ def highlight_errors(df, error_list):
     ], axis=0)
     return styled_df
 
-# Function to humanize rule name
 def humanize_rule_name(rule_type):
     return rule_type.replace('_', ' ').title()
 
@@ -71,7 +67,6 @@ def humanize_rule_name(rule_type):
 st.set_page_config(page_title="Data Validation Agent AI", page_icon="✅", layout="wide")
 st.title('🛡️ Data Validation Agent AI')
 
-# Upload file
 uploaded_file = st.file_uploader("📤 Upload your file (CSV or Excel)", type=["csv", "xlsx"])
 
 if uploaded_file:
@@ -90,6 +85,12 @@ if uploaded_file:
             columns = df.columns.tolist()
             selected_columns = st.multiselect("🛠️ Select Columns to Validate", columns)
 
+            view_download_option = st.radio(
+                "👀 View & Download Option (Choose BEFORE validation)",
+                ("Selected Columns Only", "All Columns"),
+                horizontal=True
+            )
+
             rule_types = validation_rules['rule_type'].unique().tolist()
             selected_rule = st.selectbox("⚙️ Select Rule to Apply", rule_types)
 
@@ -106,22 +107,19 @@ if uploaded_file:
                 if validation_results:
                     st.error(f"⚠️ Found {len(validation_results)} validation issues.")
 
-                    view_option = st.radio(
-                        "👀 View Options",
-                        ("Selected Columns Only", "All Columns"),
-                        horizontal=True
-                    )
-
-                    if view_option == "Selected Columns Only":
+                    # Select dataframe based on pre-chosen view option
+                    if view_download_option == "Selected Columns Only":
                         df_to_show = df[selected_columns]
+                        df_for_download = df[selected_columns]
                     else:
                         df_to_show = df
+                        df_for_download = df
 
                     st.subheader("📊 Highlighted DataFrame with Errors")
                     styled_df = highlight_errors(df_to_show, validation_results)
                     st.dataframe(styled_df)
 
-                    # Prepare downloadable Excel files
+                    # Create download file
                     def create_excel(dataframe):
                         output = io.BytesIO()
                         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -130,36 +128,25 @@ if uploaded_file:
                             worksheet = writer.sheets["ValidatedData"]
 
                             error_indices = {(row, col) for row, col, _ in validation_results}
-                            if set(dataframe.columns) == set(df.columns):
+                            if set(dataframe.columns).issubset(set(df.columns)):
                                 red_format = workbook.add_format({'bg_color': '#FF6666'})
                                 for row, column, _ in validation_results:
-                                    col_idx = dataframe.columns.get_loc(column)
-                                    worksheet.write(row + 1, col_idx, dataframe.iloc[row, col_idx], red_format)
+                                    if column in dataframe.columns:
+                                        col_idx = dataframe.columns.get_loc(column)
+                                        worksheet.write(row + 1, col_idx, dataframe.iloc[row, col_idx], red_format)
 
                         output.seek(0)
                         return output
 
-                    selected_output = create_excel(df[selected_columns])
-                    full_output = create_excel(df)
+                    output_excel = create_excel(df_for_download)
                     rule_label = humanize_rule_name(selected_rule)
 
-                    # --- Side-by-side download buttons ---
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.download_button(
-                            label="📥 Download (Selected Columns)",
-                            data=selected_output,
-                            file_name=f"{selected_sheet}_{rule_label}_validated_selected_columns.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        )
-                    with col2:
-                        st.download_button(
-                            label="📥 Download (All Columns)",
-                            data=full_output,
-                            file_name=f"{selected_sheet}_{rule_label}_validated_all_columns.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        )
-                    # --------------------------------------
+                    st.download_button(
+                        label=f"📥 Download Validated File ({rule_label})",
+                        data=output_excel,
+                        file_name=f"{selected_sheet}_{rule_label}_validated.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
 
                 else:
                     st.balloons()
