@@ -86,7 +86,7 @@ if uploaded_file:
             selected_columns = st.multiselect("🛠️ Select Columns to Validate", columns)
 
             view_download_option = st.radio(
-                "👀 View & Download Option (Choose BEFORE validation)",
+                "👀 View & Download Option",
                 ("Selected Columns Only", "All Columns"),
                 horizontal=True
             )
