@@ -27,7 +27,7 @@ def apply_validation(df, selected_columns, rule_type, param=None):
     for column in selected_columns:
         if column not in df.columns:
             continue
-        df[column] = df[column].fillna('')  # Fill NaN with blank string
+        df[column] = df[column].fillna('')
 
         if rule_type == "contains_keyword_in_row":
             keyword = param
@@ -106,7 +106,6 @@ if uploaded_file:
                 if validation_results:
                     st.error(f"⚠️ Found {len(validation_results)} validation issues.")
 
-                    # Add option to select what to view (new feature 1)
                     view_option = st.radio(
                         "👀 View Options",
                         ("Selected Columns Only", "All Columns"),
@@ -122,7 +121,7 @@ if uploaded_file:
                     styled_df = highlight_errors(df_to_show, validation_results)
                     st.dataframe(styled_df)
 
-                    # Prepare download files (new feature 2)
+                    # Prepare downloadable Excel files
                     def create_excel(dataframe):
                         output = io.BytesIO()
                         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -130,7 +129,6 @@ if uploaded_file:
                             workbook = writer.book
                             worksheet = writer.sheets["ValidatedData"]
 
-                            # Highlight errors (only if viewing all columns)
                             error_indices = {(row, col) for row, col, _ in validation_results}
                             if set(dataframe.columns) == set(df.columns):
                                 red_format = workbook.add_format({'bg_color': '#FF6666'})
@@ -141,25 +139,27 @@ if uploaded_file:
                         output.seek(0)
                         return output
 
-                    # Files for both options
                     selected_output = create_excel(df[selected_columns])
                     full_output = create_excel(df)
-
                     rule_label = humanize_rule_name(selected_rule)
 
-                    st.download_button(
-                        label=f"📥 Download Validated File (Selected Columns)",
-                        data=selected_output,
-                        file_name=f"{selected_sheet}_{rule_label}_validated_selected_columns.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
-
-                    st.download_button(
-                        label=f"📥 Download Validated File (All Columns)",
-                        data=full_output,
-                        file_name=f"{selected_sheet}_{rule_label}_validated_all_columns.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
+                    # --- Side-by-side download buttons ---
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.download_button(
+                            label="📥 Download (Selected Columns)",
+                            data=selected_output,
+                            file_name=f"{selected_sheet}_{rule_label}_validated_selected_columns.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
+                    with col2:
+                        st.download_button(
+                            label="📥 Download (All Columns)",
+                            data=full_output,
+                            file_name=f"{selected_sheet}_{rule_label}_validated_all_columns.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
+                    # --------------------------------------
 
                 else:
                     st.balloons()
