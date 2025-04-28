@@ -8,10 +8,10 @@ import io
 def load_file(uploaded_file):
     file_type = uploaded_file.type
     if file_type in ["application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]:
-        return pd.read_excel(uploaded_file, sheet_name=None)  # Load all sheets as dictionary
+        return pd.read_excel(uploaded_file, sheet_name=None)
     elif file_type == "text/csv":
         df = pd.read_csv(uploaded_file)
-        return {"Sheet1": df}  # Wrap CSV into a "sheet"
+        return {"Sheet1": df}
     else:
         st.error("Invalid file type. Please upload an Excel or CSV file.")
         return None
@@ -93,7 +93,6 @@ if uploaded_file:
             rule_types = validation_rules['rule_type'].unique().tolist()
             selected_rule = st.selectbox("⚙️ Select Rule to Apply", rule_types)
 
-            # Optional param input
             param = None
             if selected_rule == "contains_keyword_in_row":
                 param = st.text_input("🔑 Enter Keyword to Search")
@@ -107,35 +106,61 @@ if uploaded_file:
                 if validation_results:
                     st.error(f"⚠️ Found {len(validation_results)} validation issues.")
 
+                    # Add option to select what to view (new feature 1)
+                    view_option = st.radio(
+                        "👀 View Options",
+                        ("Selected Columns Only", "All Columns"),
+                        horizontal=True
+                    )
+
+                    if view_option == "Selected Columns Only":
+                        df_to_show = df[selected_columns]
+                    else:
+                        df_to_show = df
+
                     st.subheader("📊 Highlighted DataFrame with Errors")
-                    styled_df = highlight_errors(df, validation_results)
+                    styled_df = highlight_errors(df_to_show, validation_results)
                     st.dataframe(styled_df)
 
-                    # Create downloadable Excel
-                    output = io.BytesIO()
-                    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                        df.to_excel(writer, index=False, sheet_name="ValidatedData")
-                        workbook = writer.book
-                        worksheet = writer.sheets["ValidatedData"]
+                    # Prepare download files (new feature 2)
+                    def create_excel(dataframe):
+                        output = io.BytesIO()
+                        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                            dataframe.to_excel(writer, index=False, sheet_name="ValidatedData")
+                            workbook = writer.book
+                            worksheet = writer.sheets["ValidatedData"]
 
-                        # Highlight cells with errors
-                        red_format = workbook.add_format({'bg_color': '#FF6666'})
-                        for row, column, _ in validation_results:
-                            col_idx = df.columns.get_loc(column)
-                            worksheet.write(row + 1, col_idx, df.iloc[row, col_idx], red_format)
+                            # Highlight errors (only if viewing all columns)
+                            error_indices = {(row, col) for row, col, _ in validation_results}
+                            if set(dataframe.columns) == set(df.columns):
+                                red_format = workbook.add_format({'bg_color': '#FF6666'})
+                                for row, column, _ in validation_results:
+                                    col_idx = dataframe.columns.get_loc(column)
+                                    worksheet.write(row + 1, col_idx, dataframe.iloc[row, col_idx], red_format)
 
-                    output.seek(0)
+                        output.seek(0)
+                        return output
 
-                    # Human-friendly rule label
+                    # Files for both options
+                    selected_output = create_excel(df[selected_columns])
+                    full_output = create_excel(df)
+
                     rule_label = humanize_rule_name(selected_rule)
-                    download_filename = f"{selected_sheet}_{rule_label}_validated.xlsx"
 
                     st.download_button(
-                        label=f"📥 Download Validated File ({rule_label})",
-                        data=output,
-                        file_name=download_filename,
+                        label=f"📥 Download Validated File (Selected Columns)",
+                        data=selected_output,
+                        file_name=f"{selected_sheet}_{rule_label}_validated_selected_columns.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
+
+                    st.download_button(
+                        label=f"📥 Download Validated File (All Columns)",
+                        data=full_output,
+                        file_name=f"{selected_sheet}_{rule_label}_validated_all_columns.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+
                 else:
                     st.balloons()
                     st.success("✅ No validation errors found! Your data looks perfect 🎉")
